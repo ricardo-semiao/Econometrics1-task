@@ -27,7 +27,7 @@ prettify_star <- function(star, low = 0.01, high = 1000, digits = 3, scipen = -7
 
 gaze <- function(x) {
   stargazer(x,
-            type = "latex",
+            type = "text",
             no.space = TRUE,
             omit.stat = c("f"),
             df = FALSE,
@@ -80,10 +80,21 @@ data_gdensity <- function(...) {
   result
 }
 
-plot_gdensity <- function(graph_data) {
+plot_gdensity <- function(graph_data, coord, geom = "poly") {
+  other_coord <- c(x = "y", y = "x")[coord]
+  aes_list <- list(
+    exprs("{coord}" := Siblings_jitter),
+    exprs("{coord}" := Siblings + dens, group = Siblings)
+  )
   list(
-    geom_point(aes(y = Siblings_jitter), graph_data$data_true, alpha = 0.05),
-    geom_path(aes(y = Siblings + dens, group = Siblings), linewidth = 0.75, color = pal[7])
+    geom_point(aes(!!!aes_list[[1]]), graph_data$data_true, alpha = 0.05),
+    if (geom == "poly") {
+      geom_polygon(aes(!!!aes_list[[2]]),
+        linewidth = 0.75, color = pal[7], fill = pal[7], alpha = 0.5
+      )
+    } else {
+      geom_path(aes(!!!aes_list[[2]]), linewidth = 0.75, color = pal[7])
+    }
   )
 }
 
@@ -103,38 +114,57 @@ if (FALSE) {
 # Loading data:
 data_raw <- readRDS("Data/data_raw.RDS")
 
-# Filtering out negative incomes; transforming missing codes to NA:
+# Filtering out negative incomes; transforming missing codes to NA, etc.:
 data_raw <- data_raw %>%
   filter(INCTOT >= 0) %>%
-  mutate(across(where(is.numeric) & !SERIAL,
-    ~ifelse(grepl("99+8?", as.character(.x)), NA, .x))
+  mutate(
+    across(where(is.numeric) & !SERIAL,
+      ~ifelse(grepl("99+8?", as.character(.x)), NA, .x)
+    ),
+    STEPPOP = c("0" = 0, "2" = 3, "3" = 5)[as.character(STEPPOP)]
   )
 
-# Setup:
-age_max <- 21 #max age to be considered a "child of the household"
-age_start <- 5 #age of possible school start
-is_child <- expr(RELATE == 3 & AGE <= age_max)
+# Chekcing frequency of multiple families
+table(data_raw$NFAMS) / nrow(data_raw)
 
-# Aggregating data to the household level:
+# Setup:
+age_start <- 5 #age of possible school start
+is_child <- expr(RELATE == 3 & AGE <= 17)
+#expr(RELATE == 3 & (AGE <= 15 | (AGE <= 21 & MARST == 1 & HRSUSUAL1 == 0)))
+is_parent <- expr(RELATE %in% 1:2)
+
+# Aggregating data to the household level. Creating relevant variables:
 data <- data_raw %>%
+  filter(NFAMS == 1) %>%
   group_by(HouseID = as.factor(SERIAL)) %>%
   summarise(
-    Families = mean(NFAMS),
-    Siblings = sum(!!is_child), 
+    Siblings = sum(!!is_child), #-- Technical -¬
     ChildAges = list(AGE[!!is_child]),
-    IncTot = sum(INCTOT, na.rm = TRUE),
-    RoomsCapta = ROOMS[1]/PERSONS[1],
-    YearsEduc = mean(YRSCHOOL[!!is_child] - age_start, na.rm = TRUE),
+    RoomsCapta = ROOMS[1]/PERSONS[1], #-- Quality measures -¬
+    YearsEduc = mean(AGE[!!is_child] - YRSCHOOL[!!is_child] - age_start, na.rm = TRUE),
     StudentsCapta = sum(SCHOOL[!!is_child] == 1)/Siblings,
     HrsUsual = list(HRSUSUAL1[!!is_child] %>% ifelse(is.na(.), 0, .)),
-    HasTwins = any(duplicated(AGE[!!is_child])),
+    HasStep = any(STEPMOM[!!is_child] == 3) | any(STEPPOP[!!is_child] == 3),
+    StepCapta = mean((STEPMOM[!!is_child] == 3) + (STEPPOP[!!is_child] == 3), na.rm = TRUE),
+    MaleAvg = mean(SEX == 1), #-- Controls -¬
+    IncTot = sum(INCTOT, na.rm = TRUE),
+    IncWel = sum(INCWEL, na.rm = TRUE)/IncTot,
+    IncPen = sum(INCRET, na.rm = TRUE)/IncTot,
+    IncRest = sum(INCTOT - INCWEL - INCRET - INCEARN, na.rm = TRUE)/IncTot,
+    ParentsAgeAvg = mean(AGE[!!is_parent], na.rm = TRUE),
+    ParentsEducAvg = mean(YRSCHOOL[!!is_parent], na.rm = TRUE),
+    ParentsWorkAvg = mean(HRSUSUAL1[!!is_parent], na.rm = TRUE),
+    ParentsApplying = any(WRKAVAIL[!!is_parent] == 1),
+    ParentsUnited = MARST[!!is_parent][1] == 2,
+    HasGrandchild = any(RELATE == 4),
+    HasTwins = any(duplicated(AGE[!!is_child])) #-- IV -¬
   ) %>%
   ungroup() %>%
-  filter(Siblings > 0 & Siblings < 8)
+  filter(Siblings > 0 & Siblings < 7)
 
-# Creating extra variables:
+
+# Creating more variables (that needed special opps. such as `rowwise`):
 data <- data %>%
-  filter(Families == 1) %>%
   mutate(
     IncTotLog = log(IncTot + 1, base = 10),
     IncTotCut = cut(IncTot, c(0,25000,50000,100000,Inf)) %>%
@@ -143,8 +173,11 @@ data <- data %>%
   ) %>%
   rowwise() %>%
   mutate(
-    HasWorkers = any(HrsUsual[[1]] != 0),
-    WorkedCapta = sum(HrsUsual[[1]])/Siblings
+    HasWorkers = any(HrsUsual != 0),
+    WorkedCapta = sum(HrsUsual)/Siblings,
+    AgeMax = max(ChildAges, na.rm = TRUE),
+    AgeMin = min(ChildAges, na.rm = TRUE),
+    AgeAvg = mean(ChildAges, na.rm = TRUE)
   ) %>%
   ungroup()
 
@@ -160,9 +193,6 @@ data <- data %>%
 
 
 # Exploratory Analysis ----------------------------------------------------
-# Chekcing frequency of families per household
-table(data$Families) / nrow(data)
-
 # Analyzing ages of "childs":
 data_raw %>%
   filter(RELATE == 3) %>%
@@ -202,6 +232,22 @@ data %>%
   select(starts_with("HasWorkers")) %>%
   map(table)
 
+# Analyzing step parenting:
+data_raw %>%
+  with(STEPMOM + STEPPOP) %>%
+  table() %>% 
+  {./sum(.)}
+
+data$StepCapta %>% table()
+data$HasStep %>% table()
+data_raw$RELATED %>% table()
+
+# Analyzing sex:
+data_raw$SEX %>% table()
+
+# Analyzing grandchilds:
+data$HasGrandchild %>% table()
+data %>% filter(HasGrandchild) %>% pull(AgeMax) %>% table()
 
 
 # Task 1 ------------------------------------------------------------------
@@ -237,12 +283,14 @@ model1$results <- imap_dfr(model1$models, function(m, name) {
     )
 })
 
+gaze(model1$models)
+
 
 # -------------------- Graphs --------------------
 graph1 <- data_gdensity(IncTot)
 
 ggplot(graph1$data_density, aes(value, Siblings)) +
-  plot_gdensity(graph1) +
+  plot_gdensity(graph1, "y") +
   geom_line(aes(y = fit, color = model), model1$results,
     linewidth = 1, alpha = 0.7
   ) +
@@ -255,8 +303,6 @@ ggplot(graph1$data_density, aes(value, Siblings)) +
     color = "Model"
   )
 
-gaze(model1$models)
-
 
 # Task 2 ------------------------------------------------------------------
 # -------------------- Graphs --------------------
@@ -267,7 +313,7 @@ graph2$data_hasworkers <- data %>%
   mutate(HasWorkers = as.integer(HasWorkers), var = "HasWorkers")
 
 graph2$graph_cont <- ggplot(graph2$data_density, aes(Siblings, value)) +
-  plot_gdensity(graph2) +
+  plot_gdensity(graph2, "x") +
   plot_smooths(graph2$data_true) +
   facet_wrap(vars(var), scales = "free_y") +
   scale_color_manual(values = pal) +
@@ -281,9 +327,9 @@ graph2$graph_disc <- ggplot(graph2$data_hasworkers, aes(Siblings, HasWorkers)) +
   scale_color_manual(values = pal) +
   labs(x = "Siblings", y = "", size = "Count/Density", color = "Models")
 
-graph2$layout <- "AAAA#\nAAAAB\nAAAAB\nAAAAB\nAAAA#"
+graph2$layout <- "AAAAB\nAAAAB\nAAAAC\nAAAAC"
 
-graph2$graph_cont + graph2$graph_disc +
+graph2$graph_cont + graph2$graph_disc + guide_area() +
   plot_layout(widths = c(4,1), guides = "collect", design = graph2$layout) +
   plot_annotation(title = "Quality Measures versus Siblings")
 
@@ -301,3 +347,13 @@ model2$formulas <- expand.grid(
 model2$models <- map(model2$formulas, ~lm(.x, data))
 
 gaze(model2$models)
+
+
+# Task 3 ------------------------------------------------------------------
+lm(YearsEduc ~ Siblings + HasStep + MaleAvg + IncTotQuant + IncWel + IncPen +
+     ParentsAgeAvg + ParentsEducAvg + ParentsWorkAvg + ParentsApplying +
+     ParentsUnited + HasGrandchild + AgeMax + AgeMin + AgeAvg,
+ data
+) %>% summary()
+#StepCaptam, IncTot, IncRest, IncTotLog
+
