@@ -8,8 +8,7 @@ library(ivreg)
 theme_set(theme_bw())
 pal <- RColorBrewer::brewer.pal(8, "Dark2")
 
-prettify_star <- function(star, low = 0.01, high = 1000, digits = 3, scipen = -7, ...) {
-  star <- capture.output(star)
+prettify_star <- function(star, low = 0.01, high = 1000, digits = 3, scipen = -7) {
   mark  <- '::::'
   
   replace_numbers <- function(x) {
@@ -18,30 +17,47 @@ prettify_star <- function(star, low = 0.01, high = 1000, digits = 3, scipen = -7
     ifelse(
       (x.num >= low) & (x.num < high), 
       round(x.num, digits = digits), 
-      prettyNum(x.num, digits = digits, scientific = scipen, ...)
+      prettyNum(x.num, digits = digits, scientific = scipen)
     )
   }    
   
   reg <- paste0("([0-9.\\-]+", mark, "[0-9.\\-]+)")
-  cat(gsubfn::gsubfn(reg, ~replace_numbers(x), star), sep = '\n')
+  gsubfn::gsubfn(reg, ~replace_numbers(x), star)
 }
 
-gaze <- function(x) {
-  stargazer(x,
-            type = "text",
-            no.space = TRUE,
-            omit.stat = c("f"),
-            df = FALSE,
-            omit.table.layout = "n",
-            decimal.mark = "::::"
+gaze <- function(x, output = "console", ...) {
+  star <- stargazer(x,
+    covariate.labels = str_replace_all(names(x$coefficients)[-1], 
+      c("as\\.factor\\(Siblings\\)" = "Siblings = ")
+    ),
+    type = if (output == "console") "text" else "latex",
+    no.space = TRUE,
+    #omit.stat = c("f"),
+    df = FALSE,
+    omit.table.layout = "n",
+    decimal.mark = "::::",
+    header = FALSE,
+    table.placement = "!htbp",
+    ...
   ) %>%
-    prettify_star()
+    capture.output()
+  
+  if (output == "console") {
+    cat(star, sep = "\n")
+  } else {
+    star %>%
+      prettify_star() %>%
+      writeLines(output)
+  }
+  
+  invisible(star)
 }
 
 plot_smooths <- function(data) {
   create_sm <- function(formula, name, data, method = "lm"){
     list(geom_smooth(aes(Siblings, color = !!name), data,
-                     formula = formula, method = method, se = FALSE, na.rm = TRUE, alpha = 0.7 
+      formula = formula, method = method, se = FALSE, na.rm = TRUE, alpha = 0.7,
+      linewidth = 0.75
     ))
   }
   
@@ -91,10 +107,10 @@ plot_gdensity <- function(graph_data, coord, geom = "poly") {
     geom_point(aes(!!!aes_list[[1]]), graph_data$data_true, alpha = 0.05),
     if (geom == "poly") {
       geom_polygon(aes(!!!aes_list[[2]]),
-        linewidth = 0.75, color = pal[7], fill = pal[7], alpha = 0.5
+        linewidth = 0.5, color = pal[7], fill = pal[7], alpha = 0.5
       )
     } else {
-      geom_path(aes(!!!aes_list[[2]]), linewidth = 0.75, color = pal[7])
+      geom_path(aes(!!!aes_list[[2]]), linewidth = 0.5, color = pal[7])
     }
   )
 }
@@ -102,6 +118,42 @@ plot_gdensity <- function(graph_data, coord, geom = "poly") {
 mean_wona <- function(x) {
   x %>% replace_na(0) %>% mean()
 }
+
+quick_agg <- function(..., filter = TRUE) {
+  columns <- exprs(...)
+  
+  result <- data_raw %>%
+    group_by(SERIAL) %>%
+    summarise(
+      Siblings = sum(!!is_child, na.rm = TRUE),
+      !!!columns
+    ) %>%
+    {if (filter) filter(., Siblings > 0 & Siblings < 7) else .} %>%
+    select(-(1:2))
+  
+  print(map(result, ~ round(table(.x)/length(.x), 4) * 100))
+  invisible(result)
+}
+
+plot_partial <- function(updt, iv) {
+  data_partial <- map_dfr(model3$formulas[1:2], ~ tibble(
+    Siblings = lm(update(.x, updt), data)$residuals,
+    y = lm(update(update(.x, Siblings ~ .), updt), data)$residuals,
+    model = as.character(.x[[2]])
+  ))
+  
+  ggplot(data_partial, aes(Siblings, y)) +
+    geom_point(alpha = 0.05) +
+    geom_smooth(method = "lm", color = pal[1]) +
+    facet_wrap(vars(model), scales = "free") +
+    labs(
+      title = "Partial Regression of Quality on Siblings",
+      subtitle = c("With Controls", "With Instruments")[iv + 1],
+      y = "Residuals of Y", x = "Residuals of Siblings"
+    )
+}
+
+
 
 # Data --------------------------------------------------------------------
 # Importing and removing fixed variables; Saving as RDS:
@@ -115,152 +167,169 @@ if (FALSE) {
   saveRDS(data_raw, "Data/data_raw.RDS")
 }
 
-# Loading data:
-data_raw <- readRDS("Data/data_raw.RDS")
-
 # Filtering out negative incomes; transforming missing codes to NA, etc.:
-data_raw <- data_raw %>%
+data_raw <- readRDS("Data/data_raw.RDS") %>%
   filter(INCTOT >= 0) %>%
   mutate(
     across(where(is.numeric) & !SERIAL,
       ~ifelse(grepl("99+8?", as.character(.x)), NA, .x)
     ),
-    STEPPOP = c("0" = 0, "2" = 3, "3" = 5)[as.character(STEPPOP)]
+    STEPPOP = c("0" = 0, "2" = 3, "3" = 5)[as.character(STEPPOP)],
+    RACE = ifelse(RACE %in% 40:49, 40, RACE)
   )
 
-# Chekcing frequency of multiple families
-table(data_raw$NFAMS) / nrow(data_raw)
-
 # Setup:
-is_child <- expr(RELATE == 3 & AGE <= 17) #(AGE <= 15 | (AGE <= 20 & MARST == 1 & HRSUSUAL1 == 0))
+is_child <- expr(RELATE == 3 & (AGE <= 17 | (AGE <= 20 & MARST == 1 & is.na(HRSUSUAL1))))
 is_parent <- expr(RELATE %in% 1:2)
 
 # Aggregating data to the household level. Creating relevant variables:
 data <- data_raw %>%
-  filter(NFAMS == 1) %>%
+  filter(NFAMS == 1 & GQ == 10) %>%
+  arrange(AGE) %>%
   group_by(HouseID = as.factor(SERIAL)) %>%
   summarise(
-    Siblings = sum(!!is_child, na.rm = TRUE), #-- Technical -¬
+    #-- Technical -¬
+    PresentMom = all(MOMLOC[!!is_child] != 0),
+    PresentPop = all(POPLOC[!!is_child] != 0),
+    Siblings = sum(!!is_child, na.rm = TRUE),
     ChildAges = list(AGE[!!is_child]),
+    ChildMales = list(SEX[!!is_child] == 1),
     PernumMom = list(PERNUM_MOM[!!is_child]),
-    RoomsCapta = ROOMS[1]/PERSONS[1], #-- Quality measures -¬
+    HasOldChild = any(AGE[RELATE == 3] >= 21),
+    HasGrandchilds = any(RELATE == 4, na.rm = TRUE),
+    #-- Quality measures -¬
+    BedroomsCapta = BEDROOMS[1]/PERSONS[1],
     YearsEduc = mean_wona(AGE[!!is_child] - 5 - YRSCHOOL[!!is_child]),
     StudentsCapta = sum(SCHOOL[!!is_child] == 1)/Siblings,
     HrsUsual = list(HRSUSUAL1[!!is_child] %>% ifelse(is.na(.), 0, .)),
+    #-- Controls -¬
+    MaleAvg = mean_wona(SEX[!!is_child] == 1),
+    HasDisabled = (DISABLED[!!is_child][1] == 2) && any(DISABLED[!!is_child] == 1, na.rm = TRUE),
+    FirstDisabled = DISABLED[!!is_child] %>% {.[length(.) - 1] == 1},
+    FamSize = sum(!RELATE %in% 1:4, na.rm = TRUE),
     HasStep = any(STEPMOM[!!is_child] == 3) | any(STEPPOP[!!is_child] == 3),
-    StepCapta = mean_wona((STEPMOM[!!is_child] == 3) + (STEPPOP[!!is_child] == 3)),
-    MaleAvg = mean_wona(SEX[!!is_child] == 1), #-- Controls -¬
-    IncTot = sum(INCTOT, na.rm = TRUE),
-    IncWel = if (IncTot > 0) sum(INCWEL, na.rm = TRUE)/IncTot else 0,
-    IncPen = if (IncTot > 0) sum(INCRET, na.rm = TRUE)/IncTot else 0,
     ParentsAgeAvg = mean_wona(c(AGE[!!is_parent], YRSCHOOL_MOM, YRSCHOOL_POP)),
     ParentsEducAvg = mean_wona(c(YRSCHOOL[!!is_parent], YRSCHOOL_MOM[!!is_child], YRSCHOOL_POP[!!is_child])),
     ParentsWorkAvg = mean_wona(c(HRSUSUAL1[!!is_parent], HRSUSUAL1_MOM[!!is_child], HRSUSUAL1_POP[!!is_child])),
+    ParentsRace = RACE[!!is_parent][1] %>%
+      {ifelse((sum(!!is_parent) > 1) && (. != RACE[!!is_parent][2]), 0, .)} %>% as.factor(),
     ParentsUnited = MARST[!!is_parent][1] == 2, #& MARST_MOM == 2 & MARST_POP == 2
-    Grandchilds = sum(RELATE == 4, na.rm = TRUE)
+    ParentsCitizenship = CITIZEN[!!is_parent][1] %>%
+      {ifelse((sum(!!is_parent) > 1) && (. != CITIZEN[!!is_parent][2]), 0, .)} %>% as.factor(),
+    #-- Income -¬
+    IncTot = sum(INCTOT, na.rm = TRUE),
+    IncWel = if (IncTot > 0) sum(INCWEL, na.rm = TRUE)/IncTot else 0,
+    IncPen = if (IncTot > 0) sum(INCRET, na.rm = TRUE)/IncTot else 0,
   ) %>%
   ungroup() %>%
-  filter(Siblings > 0 & Siblings < 7)
-
-
-# Creating more variables (that needed special opps. such as `rowwise`):
-data <- data %>%
+  filter(Siblings > 0 & Siblings < 7 & PresentMom & !HasOldChild & !HasGrandchilds) %>%
   mutate(
+    IncTotQuant = ecdf(IncTot)(IncTot),
     IncTotLog = log(IncTot + 1, base = 10),
     IncTotCut = cut(IncTot, c(-Inf,25000,50000,100000,Inf)) %>%
-      fct_relabel(., \(x) set_names(paste(1:4), levels(.))[x]),
-    IncTotQuant = ecdf(IncTot)(IncTot)
+      fct_relabel(., \(x) set_names(paste(1:4), levels(.))[x])
   ) %>%
   rowwise() %>%
   mutate(
     HasWorkers = any(HrsUsual != 0),
     WorkedCapta = sum(HrsUsual)/Siblings,
-    AgeMax = max(ChildAges, na.rm = TRUE),
-    AgeMin = min(ChildAges, na.rm = TRUE),
-    AgeAvg = mean_wona(ChildAges),
-    HasTwins05 = any(duplicated(ChildAges)),
-    HasTwins1 = any(map2_lgl(duplicated(ChildAges), duplicated(PernumMom), `&`)),
-    HasTwins2 = HasTwins1 & ChildAges %>% {vctrs::vec_duplicate_detect(.)[which.min(.)]},
-    YoungTwins = HasTwins2 & ChildAges %>% {.[which.min(.)] < 7}
+    ChildsAgeMin = min(ChildAges, na.rm = TRUE), #AgeMax = max(ChildAges, na.rm = TRUE),
+    ChildsAgeAvg = mean_wona(ChildAges),
+    HasTwins = any(map2_lgl(duplicated(ChildAges), duplicated(PernumMom), `&`)) &
+      duplicated(ChildAges)[length(ChildAges)],
+    OldTwins = HasTwins & ChildAges %>% {.[which.min(.)] >= 7},
+    FirstSameSex = map2_lgl(duplicated(ChildMales[1:2]), duplicated(PernumMom)[1:2], `&`)[2],
+    TwinsFirst = HasTwins & length(ChildAges) == 2,
+    TwinsSecond = HasTwins & length(ChildAges) == 3,
+    TwinsThird = HasTwins & length(ChildAges) == 4,
   ) %>%
   ungroup() %>%
-  na.omit()
+  na.omit() #check NA's with: map_dbl(data, ~sum(is.na(.x)))
 
-
-# Other possible variables for parenting quality:
-#Own = OWNERSHIP[1]
-#PresentParents = (MOMLOC[RELATE == 3][1] != 0) + (POPLOC[RELATE == 3][1] != 0),
-#BedroomsCapta = BEDROOMS[1]/PERSONS[1],
-#NonBedroomsCapta = (ROOMS[1] - BEDROOMS[1])/PERSONS[1],
-#IncRest = sum(INCTOT - INCWEL - INCRET - INCEARN, na.rm = TRUE)/IncTot,
-#ParentsApplying = any(c(WRKAVAIL[!!is_parent] == 1, WRKAVAIL_MOM, WRKAVAIL_POP)),
-
-# Other possible definitions of cut and quant:
-#IncTotCut = cut(IncTot, quantile(IncTot, seq(0, 1, length = 6), na.rm = TRUE))
-#IncTotQuant = IncTot/max(IncTot); m$model[,"IncTotQuant"] * max(data$IncTot)
 
 
 # Exploratory Analysis ----------------------------------------------------
-# Analyzing relations:
-table(data_raw$RELATE) / length(unique(data_raw$SERIAL))
-
-data_raw %>%
-  group_by(SERIAL) %>%
-  summarise(One = any(1:2 %in% RELATE), Both = all(1:2 %in% RELATE)) %>%
-  select(-1) %>%
-  map(table)
-
+# -------------------- Filtering --------------------
 # Analyzing NA and NaN values:
 data %>%
-  select(-c(ChildAges, HrsUsual)) %>%
+  select(-c(ChildAges, ChildMales, HrsUsual, PernumMom)) %>%
   map_df(~ c(sum(is.nan(.x)), sum(are_na(.x)))) %>%
   print(width = 9999)
 
-which(data$ParentsUnited %>% are_na())
 
-# Analyzing ages of "childs":
+# Households and households with children
+data_raw$SERIAL %>% unique() %>% length()
+filter(data_raw, RELATE == 3)$SERIAL %>% unique() %>% length()
+
+quick_agg(
+  Under17 = sum(RELATE == 3 & AGE <= 17, na.rm = TRUE) == 0,
+  Under21 = sum(RELATE == 3 & (AGE <= 17 | (AGE <= 20 & MARST == 1 & is.na(HRSUSUAL1))), na.rm = TRUE) == 0,
+  filter = FALSE
+) %>%
+  pull(Under21) %>%
+  table()
+
+
+# Families per household:
+quick_agg(NFams = NFAMS[1] > 1, Gq = GQ[1] != 10)
+
+
+# Location and step parenting:
+quick_agg(
+  MomLoc = any(MOMLOC[!!is_child] != 0),
+  PopLoc = any(POPLOC[!!is_child] != 0),
+  Both = any((MOMLOC[!!is_child] != 0) & (POPLOC[!!is_child] != 0)),
+  Any = any((MOMLOC[!!is_child] != 0) | (POPLOC[!!is_child] != 0))
+)
+
+quick_agg(Step = any((STEPMOM[!!is_child] != 0) | (STEPPOP[!!is_child] != 0)))
+
+
+# Old children and grandchildren:
+quick_agg(Over21 = any(AGE[RELATE == 3] >= 21))
+
 data_raw %>%
   filter(RELATE == 3) %>%
   pull(AGE) %>%
-  hist()
+  ggpubr::gghistogram(ggtheme = theme_bw()) +
+  labs(title = "Histogram of 'Childs' Ages", y = "Count", x = "Age")
 
-# Analyzing marital status of "childs"
-data_raw %>%
-  filter(RELATE == 3 & AGE < 21) %>%
-  pull(MARST) %>%
-  {table(.)/length(.)}
+ggsave("Figures/ages.png", width = 16, height = 12, units = "cm")
 
-# Analyzing education status of adolescents
-map(list("16 to 20" = 16:20, "18 to 20" = 18:20), function(ages) {
-  data_raw %>%
-    filter(RELATE == 3 & AGE %in% ages) %>%
-    pull(EDUCPR) %>%
-    {c(sum(. < 410), sum(. == 410), sum(. > 410))/length(.)}
-})
+quick_agg(HasGrandchilds = any(RELATE == 4, na.rm = TRUE))
 
-# Analyzing years of education in children:
+# -------------------- Controls --------------------
+# Twins:
+data %>%
+  select(contains("Twins")) %>%
+  map(table)
+
+
+# Disabled:
+data$HasDisabled %>% table()
+
+
+# Years of education in children:
 data_raw %>%
   filter(AGE < 21) %>%
   select(AGE, YRSCHOOL, EDUCPR) %>%
   pivot_longer(-AGE) %>%
   ggplot(aes(AGE, value)) +
   geom_count() +
-  geom_abline(aes(alpha = name, slope = 1, intercept = -5),
-    color = pal[1], linewidth = 1
-  ) +
+  geom_abline(aes(alpha = name, slope = 1, intercept = -5), color = pal[1], linewidth = 1) +
   scale_alpha_manual(values = c(0, 1)) +
   theme(legend.position = "none") +
-  facet_wrap(vars(name), scales = "free_y")
+  facet_wrap(vars(name), scales = "free_y") +
+  labs(title = "Education of Children by Age", y = "Value", x = "Age")
 
-data$YearsEduc %>% table()
+ggsave("Figures/educ.png", width = 16, height = 12, units = "cm")
 
+# Analizyng old children:
 data_raw %>%
-  filter(RELATE == 3 & AGE <= 17) %>%
-  transmute(YRSCHOOL = YRSCHOOL, YearsEduc = AGE - YRSCHOOL - 5) %>%
-  ggplot(aes(YRSCHOOL, YearsEduc)) +
-  geom_count()
+  filter(RELATE == 3 & AGE <= 20) %>%
+  pull(MARST) %>%
+  {round(table(.)/length(.), 4) * 100}
 
-# Analyzing child labor:
 data %>%
   rowwise() %>%
   mutate(
@@ -270,37 +339,15 @@ data %>%
   select(starts_with("HasWorkers")) %>%
   map(table)
 
-# Analyzing step parenting:
-data_raw %>%
-  with(STEPMOM + STEPPOP) %>%
-  table() %>% 
-  {./sum(.)}
+map(list("16 to 17" = 16:17, "18 to 20" = 18:20), function(ages) {
+  data_raw %>%
+    filter(RELATE == 3 & AGE %in% ages) %>%
+    pull(EDUCPR) %>%
+    {c(sum(. < 410), sum(. == 410), sum(. > 410))/length(.)} %>%
+    round(3)
+})
 
-data$StepCapta %>% table()
-data$HasStep %>% table()
-data_raw$RELATED %>% table()
 
-# Analyzing sex:
-data_raw$SEX %>% table()
-
-# Analyzing grandchilds:
-data$HasGrandchild %>% table()
-data %>% filter(HasGrandchild) %>% pull(AgeMax) %>% table()
-
-# Analyzing twins:
-data %>%
-  select(contains("Twins")) %>%
-  map(table)
-table(data$HasTwins1 + data$HasTwins2)
-table(data$OldTwins)
-
-#
-data$HasParents1 %>% table()
-data$HasParents2 %>% table()
-data$HasParents3 %>% table()
-data$HasParents4 %>% table()
-data$HasParents5 %>% table()
-(data_raw$MOMLOC) %>% table()
 
 # Task 1 ------------------------------------------------------------------
 # -------------------- Models --------------------
@@ -313,6 +360,7 @@ model1$formulas <- list(
   "Quadratic" = Siblings ~ IncTot + I(IncTot^2),
   "Log" = Siblings ~ IncTot + IncTotLog,
   "Quantile" = Siblings ~ IncTotQuant,
+  "Quantile * bins" = Siblings ~ IncTotQuant*IncTotCut,
   "Quantile Q." = Siblings ~ IncTotQuant + I(IncTotQuant^2)
 )
 
@@ -321,22 +369,31 @@ model1$models <- map(model1$formulas, ~lm(.x, data))
 model1$results <- imap_dfr(model1$models, function(m, name) {
   tibble(model = name, fit = fitted(m), res = residuals(m)) %>%
     mutate(
-      value = if (name %in% c("Quantile", "Quantile Q.")) {
+      value = if (name %in% c("Quantile", "Quantile * bins", "Quantile Q.")) {
         quantile(data$IncTot, m$model[,"IncTotQuant"])
       } else if (name %in% c("Log")) {
         10^m$model[,"IncTotLog"] - 1
       } else {
         m$model[,"IncTot"]
       },
-      model_cat = if (grepl("Linear", name)) "Linear" else "Non-Linear",
-      model = factor(model,
-        levels = c(names(model1$formulas)[1:3], " ", names(model1$formulas)[4:8])
-      )
+      model_cat = `if`(grepl("Linear", name), "Linear", `if`(
+        grepl("Quantile", name), "Quantile", "Non-Linear"
+      )),
+      model = factor(model)
     )
 })
 
-gaze(model1$models)
+model1$models %>%
+  .[grepl("Linear", names(.))] %>%
+  gaze(title = "Linear CEFs", output = "Tables/cefs_linear.tex")
 
+model1$models %>%
+  .[grepl("Quadratic|Log", names(.))] %>%
+  gaze(title = "Non-linear CEFs", output = "Tables/cefs_non-linear.tex")
+
+model1$models %>%
+  .[grepl("Quantile", names(.))] %>%
+  gaze(title = "Quantile CEFs", output = "Tables/cefs_quantile.tex")
 
 # -------------------- Graphs --------------------
 graph1 <- data_gdensity(IncTot)
@@ -344,21 +401,41 @@ graph1 <- data_gdensity(IncTot)
 ggplot(graph1$data_density, aes(value, Siblings)) +
   plot_gdensity(graph1, "y") +
   geom_line(aes(y = fit, color = model), model1$results,
-    linewidth = 1, alpha = 0.7
+    linewidth = 0.75, alpha = 0.7
   ) +
   facet_wrap(vars(model_cat), nrow = 1) +
-  scale_color_manual(values = c(pal[1:3], "white", pal[4:7]), drop = FALSE) +
+  scale_color_manual(values = c(pal[1:6], "darkred", "darkblue"), drop = FALSE) +
+  ylim(2,5.9) +
   labs(
     title = "Siblings versus Total Income",
     x = "Total Income",
     y = "Siblings",
     color = "Model"
-  )
+  ) +
+  theme(legend.position = "bottom")
+
+ggsave("Figures/cefs.png", width = 16, height = 12, units = "cm")
 
 
 # Task 2 ------------------------------------------------------------------
+# -------------------- Models --------------------
+model2 <- list()
+
+model2$formulas <- expand.grid(
+  c("BedroomsCapta", "YearsEduc", "StudentsCapta", "HasWorkers", "WorkedCapta"),
+  "~",
+  c("Siblings", "as.factor(Siblings)")
+) %>%
+  apply(1, \(x) as.formula(paste(x, collapse = " ")))
+
+model2$models <- map(model2$formulas, ~lm(.x, data))
+
+model2$models[c(1, 2, 6, 7)] %>%
+  gaze(title = "Siblings Effect - no Controls", output = "Tables/quality.tex")
+
+
 # -------------------- Graphs --------------------
-graph2 <- data_gdensity(RoomsCapta, YearsEduc, StudentsCapta, WorkedCapta)
+graph2 <- data_gdensity(BedroomsCapta, YearsEduc, StudentsCapta, WorkedCapta)
 
 graph2$data_hasworkers <- data %>%
   select(c(Siblings, HasWorkers)) %>%
@@ -385,107 +462,126 @@ graph2$graph_cont + graph2$graph_disc + guide_area() +
   plot_layout(widths = c(4,1), guides = "collect", design = graph2$layout) +
   plot_annotation(title = "Quality Measures versus Siblings")
 
-
-# -------------------- Models --------------------
-model2 <- list()
-
-model2$formulas <- expand.grid(
-  c("RoomsCapta", "YearsEduc", "StudentsCapta", "HasWorkers", "WorkedCapta"),
-  "~",
-  c("Siblings", "as.factor(Siblings)")
-) %>%
-  apply(1, \(x) as.formula(paste(x, collapse = " ")))
-
-model2$models <- map(model2$formulas, ~lm(.x, data))
-
-gaze(model2$models)
+ggsave("Figures/quality.png", width = 16, height = 14, units = "cm")
 
 
 # Task 3 ------------------------------------------------------------------
 # -------------------- Models --------------------
 model3 <- list()
 
-model3$formulas <- YearsEduc ~ Siblings + HasStep + MaleAvg + IncTotQuant + IncWel +
-  IncPen + ParentsAgeAvg + ParentsEducAvg + ParentsWorkAvg + ParentsUnited + Grandchilds +
-  AgeAvg + AgeMin
+model_controls <- " + MaleAvg + ChildsAgeAvg + ChildsAgeMin + HasDisabled +
+     FamSize + IncTotQuant + IncWel + IncPen +
+     ParentsAgeAvg + ParentsEducAvg + ParentsWorkAvg + ParentsUnited +
+     ParentsRace + ParentsCitizenship + HasStep" %>%
+  str_remove_all("\n   ")
 
-model3$models <- lm(model3$formulas, data)
-summary(model3$models)
+model3$formulas <- expand.grid(
+  quality = c("BedroomsCapta", "YearsEduc"),
+  siblings = c("~ Siblings", "~ as.factor(Siblings)"),
+  controls = model_controls
+) %>%
+  apply(1, \(x) as.formula(paste(x, collapse = " ")))
 
-car::vif(model3$models)
+model3$models <- map(model3$formulas, ~ lm(.x, data))
+map(model3$models, car::vif)
+
+gaze(model3$models,
+     keep = "Siblings",
+     title = "Siblings Effect - with Controls",
+     output = "Tables/quality_controls.tex"
+)
 
 
 # -------------------- Graphs --------------------
 graph3 <- list()
 
 graph3$data_cor <- data %>%
-  select(c(
-    HasStep, MaleAvg, IncTotQuant, IncWel, ParentsAgeAvg, ParentsEducAvg,
-    ParentsWorkAvg, ParentsUnited, Grandchilds, AgeAvg
-  )) %>%
+  select(c( #ParentsRace, ParentsCitizenship
+    MaleAvg, ChildsAgeAvg, ChildsAgeMin, HasDisabled,
+    FamSize, IncTotQuant, IncWel, IncPen, 
+    ParentsAgeAvg,  ParentsEducAvg, ParentsWorkAvg, ParentsUnited, HasStep
+  )) %>% 
   cor() %>%
   as_tibble(rownames = "var1") %>%
   pivot_longer(-var1, names_to = "var2")
 
 ggplot(graph3$data_cor, aes(var1, var2, fill = value)) +
-  geom_tile()
+  geom_tile() +
+  labs(
+    title = "Correlation of Controls", x = "Variable",  y = "Variable",
+    fill = "Correlation"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.8))
+ggsave("Figures/correlation.png", width = 16, height = 12, units = "cm")
 
-graph3$data_partial <- tibble(
-  Residuals = lm(update(model3$formulas, ~ . - Siblings), data)$fitted.values,
-  Siblings = data$Siblings
-)
-
-ggplot(graph3$data_partial, aes(Siblings, Residuals)) +
-  geom_point(alpha = 0.05, position = position_jitter(0.25,0)) +
-  geom_smooth(method = "lm")
-
+plot_partial(~ . - Siblings, FALSE)
+ggsave("Figures/quality_controls.png", width = 16, height = 12, units = "cm")
 
 
 # Task 4 ------------------------------------------------------------------
-# -------------------- Graphs --------------------
-graph4 <- list()
-
-with(data, c(
-  cor(Siblings, HasTwins1),
-  cor(Siblings, HasTwins2)
-))
-
-graph4$data_partial <- graph3$data_partial
-graph3$data_partial$Siblings_res <- lm(
-  Siblings ~ HasTwins2 + HasStep + MaleAvg + IncTotQuant + IncWel + IncPen +
-    ParentsAgeAvg + ParentsEducAvg + ParentsWorkAvg + ParentsUnited + Grandchilds +
-    AgeAvg + AgeMin, data = data
-)$fitted.values
-
-ggplot(graph3$data_partial, aes(Siblings_res, Residuals)) +
-  geom_point(alpha = 0.05) +
-  geom_smooth(method = "lm")
-
-
 # -------------------- Models --------------------
 model4 <- list()
 
-.temp_form <- "Siblings + HasStep + MaleAvg + IncTotQuant + IncWel +
-  IncPen + ParentsAgeAvg + ParentsEducAvg + ParentsWorkAvg + ParentsUnited + Grandchilds +
-  AgeAvg + AgeMin | HasTwins2 + HasStep + MaleAvg + IncTotQuant + IncWel + IncPen +
-  ParentsAgeAvg + ParentsEducAvg + ParentsWorkAvg + ParentsUnited + Grandchilds +
-  AgeAvg + AgeMin"
-
-model4$formulas <- expand.grid(c("RoomsCapta", "YearsEduc"), "~", .temp_form) %>%
+model4$formulas <- expand.grid(
+  quality = c("BedroomsCapta", "YearsEduc"),
+  basic1 = paste("~ Siblings", model_controls),
+  basic2 = "|",
+  instruments = c("HasTwins", "TwinsSecond", "TwinsThird", "FirstSameSex", "FirstDisabled"),
+  controls = model_controls
+) %>%
+  arrange(quality) %>%
   apply(1, \(x) as.formula(paste(x, collapse = " ")))
 
-#ivreg(YearsEduc ~ Siblings | HasTwins1, data = data) %>% summary()
-#ivreg(YearsEduc ~ Siblings | HasTwins2, data = data) %>% summary()
-
 model4$models <- map(model4$formulas, ~ ivreg(.x, data = data))
-model4$models <- c(
-  model4$models,
-  map(model4$formulas, ~ ivreg(.x, data = data))
+
+gaze(model4$models[1:5], output = "Tables/rooms_instrument.tex",
+     keep = "Siblings",
+     title = "Siblings Effect on Bedrooms - with Instrument"
 )
 
-model4$models %>% map(summary)
-gaze(model4$models)
+gaze(model4$models[6:10], output = "Tables/school_instrument.tex",
+  keep = "Siblings",
+  title = "Siblings Effect on Schooling - with Instrument"
+)
 
-#new Y, filter data for twin age > 7, log educ
-#remove houses that have children out
-#control of % of children being blood relatives to head
+
+# -------------------- Graphs --------------------
+graph4 <- list()
+
+map_dbl(
+  select(data, c(HasTwins, FirstSameSex, FirstDisabled, TwinsSecond, TwinsThird)),
+  ~ cor(.x, data$Siblings) %>% round(3) %>% `*`(100) 
+)
+
+#plot_partial(~ . - Siblings + TwinsThird, TRUE)
+#ggsave("Figures/quality_instruments.png", width = 16, height = 12, units = "cm")
+
+
+# Other tasks -------------------------------------------------------------
+# Correlations:
+map_dbl(
+  c("Siblings", "MaleAvg", "ChildsAgeAvg", "ChildsAgeMin", "HasDisabled",
+    "FamSize", "IncTotQuant", "IncWel", "IncPen", "ParentsAgeAvg", "ParentsEducAvg",
+    "ParentsWorkAvg", "ParentsUnited", "HasStep") %>% set_names(),
+  ~ round(cor(data$IncTot, data[[.x]]), 3)
+)
+
+map_dbl(
+  c("IncTot", "IncTotQuant", "MaleAvg", "ChildsAgeAvg", "ChildsAgeMin", "HasDisabled",
+    "FamSize", "IncTotQuant", "IncWel", "IncPen", "ParentsAgeAvg", "ParentsEducAvg",
+    "ParentsWorkAvg", "ParentsUnited", "HasStep") %>% set_names(),
+  ~ round(cor(data$Siblings, data[[.x]]), 3)
+)
+
+# Diagnostics:
+walk(
+  list(
+    model1$models$`Quantile Q.`,
+    model2$models[[2]],
+    model3$models[[2]],
+    model4$models[[2]]
+  ),
+  ~ lmtest::bptest(.x) %>% broom::tidy() %>% stargazer(summary = FALSE)
+)
+
+#coeftest(food.ols, vcov = vcovHC(food.ols, "HC1"))

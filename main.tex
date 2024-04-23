@@ -13,12 +13,23 @@
 \usepackage{amssymb} % Additional math symbols
 \usepackage{amsfonts} % Math fonts
 
+% Text packages
+\usepackage{parskip}
+\setlength{\parskip}{1em}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+}
+
+
 % Pictures
 \usepackage{graphicx}
+\usepackage{float}
 
 % Lists
 \usepackage{enumitem}
-\setlist[itemize]{topsep=-0.5em}
+\setlist[itemize]{itemsep = -0.5em, topsep = -0.5em}
 
 % Bibliography
 %\usepackage{cite}
@@ -33,9 +44,9 @@
 
 \maketitle
 
-\section{Introduction}
+\section*{Introduction}
 
-Before going to the questions, I'll present some topics on the empirical strategy that are relevant to the whole exercise.a
+Before going to the questions, I'll present some topics on the empirical strategy that are relevant to the whole exercise.
 
 The empirical papers in the literature often do some kind of filtering of the data. There are a lot of different types of households and families, there is a important trade-off in cleaning "bad" cases, such as families with absent parents, step children, old "children", etc. On one hand, filtering removes noise and biases, helping the interpretation of the results; but, on the other (i) we lose observations, which yield less precise inference, (ii) reduces the population being studied and the extrapolation potential, and (iii), if poorly made, might induce a selection bias and/or be seen as arbitrary.
 
@@ -61,8 +72,19 @@ One important filtering to be made was to remove families with children already 
 
 The low sample size, combined with the aforementioned underestimation effect, might decrease the statistical significance of the findings in this exercise.
 
+\textit{Remark:} all of the R and Latex code related to this work can be found in \href{https://github.com/ricardo-semiao/Econometrics1-task}{my Github}.
+
 
 \section*{Question 1}
+
+There are a lot of ways that the income can be related with the family size. The most simple one is a linear relation, where richer families have the resources to have more children (positive relation), or where poor families have more children because they need the labor to maintain the households (negative relation).
+
+One would imagine that both these stories might be true, such that the relation is non-linear. There might be a negative effect but with a increasing "return" of income on family size, a polinomial relation, where poor families have lots of children, middle class tend to have very little, and richer families more children too.
+
+But, it could be the case that ever increasing income does not reflect into ever increasing family size. The effect might be binned/discontinuous, such that each bin of income has a different average of children, and even a different effect of income on family size, such that for really rich families, increases in the income don't relate to increases in family size.
+
+In the same sense of the distribution (bins) of income being important, it might be that it is not the absolute value of income that matters, but actually the relative position of the family in the income distribution. For example, it might be the access to certain areas and benefits of society that is more related to the number of children, such that the CEF is related to the quantiles of income.
+
 
 \section*{Question 2}
 The models considered to explain the number of siblings were:
@@ -98,24 +120,44 @@ The linear + non-linear term specification tries to capture diminishing or incre
 
 Lastly, the CDF based specifications are a way to model the CEF with the relative position of income being the defining factor for the association with the number of siblings. There might also be a diminishing or binned effect in this scenario too. 
 
-The results are plotted below. The regression tables can be seen in the section \ref{sec:results}.
+The results are plotted below. The regression tables can be seen in the section appendix.
 
-\begin{figure}
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=0.9\textwidth]{Figures/cefs.png}
     \label{fig:cefs}
 \end{figure}
 
-The linear model and quadratic have their obvious limitations, with a very strange fit for large values in the edge of the data. We can see that all of the models, except for the linear one, have some sense of large number of siblings for low income families, then a initial decrease for middle income families. The linear based and quadratic models present different opposite relations for the high income families, but the log and quantil based approaches all show a stabilization around $1.75$ children. That is, it seems that, for high income, increases in income don't relate to different number of children.
+The linear model and quadratic have their obvious limitations, with a very strange fit for large values in the edge of the data. The binned quantile model seems to suffer from "overfitting".
+
+We can see that most of the models have some sense of large number of siblings for low income families, then a initial decrease for middle income families. The linear based and quadratic models present different opposite relations for the high income families, but the log and quantil based approaches all show a stabilization around $1.75$ children. That is, it seems that, for high income, increases in income don't relate to different number of children.
 
 
 \section*{Question 3}
+Note that, even if the CEF does not present the exact format as one of the presented, the OLS estimator would still find the best approximation that the format can give, such that we could have a causal interpretation even without perfect matching of the true CEF.
+
+The truly relevant question is as follows: the CEF having causal interpretation require that the used income measure is exogenous. That is, in relation to a potential outcomes (populational) model, its error term -- which holds everything that is relevant to the definition of the family size that isn't income -- must be uncorrelated with the income measure.
+
+This is probably false in our case. Any of the controls talked about in question 8 are variables that are relevant to the family size definition, and have a probable relation to income. To quote some stories: families with older children might already hit the wanted mark of a larger family, and don't have the negative effect on income that is to take care of small children; families where the parents have a higher education probably have higher income, and there might be a trend of a given family size amongst those parents.
+
+We can even find evidence for the correlation of income and the other variables. For example, in our sample, the correlation between income and the average age of the parents is $0.45$, between income and the average education of the parents is $0.42$, between income and a dummy for still together parents is $0.38$.
 
 
 \section*{Question 4}
+Again, we can have different formats to such CEF. The most basic one would be linear, where each increased sibling is related to a lower quality of the rest (negative relation, in line with the literature), or where more siblings create positive spillovers onto the rest of the family (positive relation).
+
+We can also consider non-linear relation, where the relation of siblings and quality is not constant, starts negative but presents "increasing effects", or the other way around. The stories that would justify such relations require a definition of the quality measure. For example, if the quality is "bedrooms per child", it might be that there is the intuitive negative relation at first, but really large families put a increased importance in bigger homes.
+
+The most important topic on this CEF is the fact that Siblings is a discrete variable, such that the CEF might be a different point for each possible value of family size. A OLS regression with a categorical siblings variable would completely staturate the CEF.
 
 
 \section*{Question 5}
+
+The relevant question is "how can a setting influence the quality-per-child decision?". Settings where there is a lot of guaranteed quality for children, regardless of the family size, should present CEFs with a less intense relation. These cases can include countries and historical periods with more welfare programs such as public schooling and health. The opposite is true, in settings with less guaranteed welfare, we would expect a more intense relation.
+
+In settings where the necessity of household labor is big, we would expect a more negative relation, as the families choose to have more children even at the cost of quality. So poorer, perhaps less industrialized settings will present this kind of relation. The opposite is true, when the decision of having children is less financial and more about will of the family, the relation should change.
+
+In summary, any fact that changes the development decision can define settings where the relation is different.
 
 
 \section*{Question 6}
@@ -123,17 +165,17 @@ The linear model and quadratic have their obvious limitations, with a very stran
 The measures of quality considered were:
 
 \begin{itemize}
-    \item Number of bedrooms in the house per child (BedroomsCapta): a measure of home quality, parents that want good development for their children will increase the size of the home as the size of the family increases.
-    \item Distance from ideal schooling years (YearsEduc): in Puerto Rico, children should start schooling at the age of 5, delayed children will have a negative value, and the opposite for advanced children. See the appendix for more information.
-    \item Number of enrolled students per child (StudentsCapta): another measure of education quality, households where the parents enrolled all the children in a school, its value will be $1$, and lower otherwise.
-    \item Number of children working per child (WorkersCapta): a negative measure of quality, if all the children are enrolled in child labor programs, the value will be $1$, and lower otherwise.
+    \item Number of bedrooms in the house per child: a measure of home quality, parents that want good development for their children will increase the size of the home as the size of the family increases.
+    \item Distance from ideal schooling years: in Puerto Rico, children should start schooling at the age of 5, delayed children will have a negative value, and the opposite for advanced children. See the appendix for more information.
+    \item Number of enrolled students per child: another measure of education quality, households where the parents enrolled all the children in a school, its value will be $1$, and lower otherwise.
+    \item Number of children working per child: a negative measure of quality, if all the children are enrolled in child labor programs, the value will be $1$, and lower otherwise.
 \end{itemize}
 
 Three different specifications were considered for the regression on number of siblings: a fully saturated model with dummies for each possible value ($1$ - $7$), a linear polinomial, and a polinomial.
 
-The results can be seen below. The regression tables (for the most relevant measures) can be seen in the section \ref{sec:results}.
+The results can be seen below. The regression tables (for the most relevant measures) can be seen in the section appendix.
 
-\begin{figure}
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=0.9\textwidth]{Figures/quality.png}
     \label{fig:quality}
@@ -152,42 +194,47 @@ Not restricting the sample for certain families, such as families where the olde
 This is not ideal, and the same worry was present in the selection of controls ahead, but the sample restriction would be too costly.
 
 
-\section*{Question 7}
+\section*{Question 7 and 8}
+\textit{Remark}: I choose to answer both jointly, for better organization and less repetition.
 
+As it was commented earlier, the requirement to causal interpretaion is no correlation to any ommited relevat variable to the quality of the children. 
 
-\section*{Question 8}
-The control variables added are presented below. Each had a quick justification, normally on the style of "why does it relate to the number of siblings" and "why is it relevant for the quality measures".
+This again is probably false. The same controls from question 8 are variables are relevant to the developemtn decision too. Consider the control variables quoted below, each had a quick justification, normally on the style of "why does it relate to the number of siblings" and "why is it relevant for the quality measures", such that all are variables that would hurt the causal interpretation of the CEF.
 
 \begin{itemize}
     \item Children Controls:
     \begin{itemize}
-        \item Frequency of male children (MaleAvg): there is a literature on the effect of having children of a same or specific gender on the family size. Also, the gender of the children might be related to the development decision, specially the school attendance;
-        \item Average children age (ChildsAgeAvg): "older families" are more probable to have already reached the planned number of children. Also,  the development decision might be different for children of different ages;
-        \item Age of youngest child (ChildsAgeMin): younger children might be more present in larger families. Also, parents that have to take care of small children might focus less on the quality of the rest of the household;
-        \item Presence of disabled children (HasDisabled): families that had a disabled child might have a different plan for family size. Also disabilities pose some chalenges in school attendance;
+        \item Frequency of male children: there is a literature on the effect of having children of a same or specific gender on the family size. Also, the gender of the children might be related to the development decision, specially the school attendance;
+        \item Average children age: "older families" are more probable to have already reached the planned number of children. Also,  the development decision might be different for children of different ages;
+        \item Age of youngest child: younger children might be more present in larger families. Also, parents that have to take care of small children might focus less on the quality of the rest of the household;
+        \item Presence of disabled children: families that had a disabled child might have a different plan for family size. Also disabilities pose some chalenges in school attendance;
     \end{itemize}
     \item Family Controls:
     \begin{itemize}
-        \item Non-atomic family size (FamSize): the number of non parents nor children in the household. Other adults might affect both the family size plan and the development decision;
-        \item Income quantile (IncTotQuant): as was seen, the income of the household is one of the most important controls. The quantile version was chosen for its good fit and intuition, as presented in question 2;
-        \item Percentage of welfare income (IncWel): the percentage of the family income that comes from welfare programs. It helps to better capture the effects of income, specially the different effects for the poorer families;
-        \item Percentage of pension income (IncPen): the percentage of the family income that comes from pension. Important for a similar reason as above;
+        \item Non-atomic family size: the number of non parents nor children in the household. Other adults might affect both the family size plan and the development decision;
+        \item Income (linearly and as quantiles): as was seen, the income of the household is one of the most important controls. The quantile version was chosen for its good fit and intuition, as presented in question 2;
+        \item Percentage of welfare income: the percentage of the family income that comes from welfare programs. It helps to better capture the effects of income, specially the different effects for the poorer families;
+        \item Percentage of pension income: the percentage of the family income that comes from pension. Important for a similar reason as above;
     \end{itemize}
     \item Parents Controls:
     \begin{itemize}
-        \item Some characteristics of the parents affect the ability, interest, and time that they have available to grow big families and induce a good development for the children, such as average parents age (ParentsAgeAvg), average parents education (ParentsEducAvg), and average parents work hours (ParentsWorkAvg). The average was used as not always the father is present.
-        \item It is also important to control for the cultural and social context of the family, such as parents' race (ParentsRace) and parents' citizenship (ParentsCitizenship). Both are the race/citizenship status if both parents present the same, or a value for biracial/bi-citizenship relation.
-        \item Lastly, we include a control for families where at least one of the parents are step-parents (HasStep). Step parents might give a different importance to family size and development quality.
+        \item Some characteristics of the parents affect the ability, interest, and time that they have available to grow big families and induce a good development for the children, such as average parents age, average parents education, and average parents work hours. The average was used as not always the father is present.
+        \item It is also important to control for the cultural and social context of the family, such as parents' race and parents' citizenship. Both are the race/citizenship status if both parents present the same, or a value for biracial/bi-citizenship relation.
+        \item Lastly, we include a control for families where at least one of the parents are step-parents. Step parents might give a different importance to family size and development quality.
     \end{itemize}
 \end{itemize}
 
+We can also find the sample correlations between those and the number of siblings. For example. age of the yougest child has a correlation of $-0.135$, worked hours of parents has a correlation of $-0.152$. Again, there is strong reasoning to not interpret the cited CEF as causal.
+
 A last relevant variable is the presence of the father in the household, as it was discussed in the introduction. But, including it would be a problem, as it can be that increases in the number of siblings causes the father to become absent, such that it might be a bad control. We can simply not control for it, and the effect for family size found will also have the effect of increasing the chance of an absent father. One would imagine that both of them work in the same direction.
+
+Another bad control might be the income of the household, as the number of children might influence it. But, by restricting the definition of children to only the ones that arent working, this effect should be minimized. Still, there is an effect of more children impliying in lesse worked hours. It is hard to say if the biases that income might reduce outweight new "bad control biases". The results were cheked with and without these controls, with little change, and I decided to keep the control.
 
 The results can be seen below. There is also the visualization of the plot for the partial regression in schooling.
 
 \input{Tables/quality_controls.tex}
 
-\begin{figure}
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=0.9\textwidth]{Figures/quality_controls.png}
     \label{fig:quality_controls}
@@ -195,16 +242,59 @@ The results can be seen below. There is also the visualization of the plot for t
 
 The probably upward biased effect on "bedrooms per capta" are all negative and significant, with a stronger effect for larger families. For Years educ, the result is statistically insignificant. This goes against the existing evidence from the literature, but is understandable given the low sample size and other problems commented in the introduction.
 
+What about causal interpretation? With the controls, a lot of else ommited variables aren't anymore, such that defending a causal relation for the CEF is easier. Still, is the siblings variable, conditional on the controls, associated with an exogenous change? It is still hard to say. The literature brings some stories that might be relevant, such as the effect of order-of-birth in studies at the individual level, the effect of descendants that have already left the household, and the effect of the presence of the father in the household. All of those are still related to the family size, and affect the development decision.
 
-\section*{Question 9}
+Without a good exgoneous variation, it is always hard to defend a causal interpretation to a CEF. This is why we will consider a instrumental variable approach. It is important to say that the instrumentalization might help to get a cleaner effect, but by nature, it will actualy yield less precise estimates.
 
 
-\section*{Question 10}
-There were a few instruments options considered:
+\section*{Question 9 and 10}
+\textit{Remark}: I choose to answer both jointly, for better organization and less repetition.
+
+In line with the same sex siblings, another instrument considered was the presence of a deficient firstborn, which might motivate the family to have more children. I don't know if such instrument is defendent in the literature.
+
+First of all the instruments must be correlated with siblings. The evidence and discussion of this will be presented below. 
+
+Secondly, the instruments must be exogenous, this means that they both mustn't be correlated with the ommited variables in the error term, and that they mustn't affect the quality measures directly.
+
+The fact that the instruments are related to random events, conditioned by genetics, helps, but doesn't guarantee those things. There are relevant ommited variables that are realized after the birth, that can still be correlated with the instruments, such as absence of father.
+
+Also, there are reasons to believe that the instruments directly affect the quality measures. At least for schools, there are literatures arguing that twins have higher spillover effects than regular children.
+
+Overall, it is not guaranteed that the instruments are exogenous, and that can't be tested. Still, lets consider the approach. There were a few instruments options considered:
 
 \begin{itemize}
-    \item Presence of twins as last two childrend: 
+    \item Presence of twins as last two children (1), with correlation $0.072$;
+    \item Presence of twins as last two children, at second birth (2), with correlation $0.074$;
+    \item Presence of twins as last two children, at third birth (3), with correlation $0.118$;
+    \item Presence of first two children with same sex (4), with correlation $0.021$;
+    \item Presence of first children with disability (5), with correlation $0.062$.
 \end{itemize}
+
+The first instrument is the easiest to defend as being a true exogenous change in the family size, so it is the one we give more relevance to. The second and third are interesting to analise if the effect changes with the order of the twin birth, as it was done in Black et al. (2005), but, in ou scenario, we don't have enough sample to make comparisons really interesting.
+
+The fourth and fifth ones are theoretically interesting, and nice to compare the the literature that has used them before, but are less important in the sense that require stronger assumptions to be considered exogenous.
+
+We can see that the correlation is really low, such that the instruments can be considered to be weak. This will pose even further reduction to the statistical significance of the results.
+
+The results can be seen below.
+
+\input{Tables/rooms_instrument.tex}
+\input{Tables/school_instrument.tex}
+
+The direction of results is in line with the literature, using the cleaner exogenous variations we indeed find a negative effect related to number of siblings with most instruments. But, very few significant results, only for the super estimated measure of rooms per capta. This was expected, the exercise already suffered with all the aforementioned sample size problems, and the IV approach only increases the variance of the estimates, specially given the weakness of the instruments.
+
+So, not all in line with the results from Black et al. (2005), but in a similar direction.
+
+The fourth and fifth instruments, that had a lesser quality, still recovered a negative measure for the bedrooms per capta, but not for the schooling measure.
+
+
+\section*{Conclusion}
+Some models diagnostics are presented in the appendix. The models seem to have heteroskedasticity and one could correct the standard errors for the presented tables, with the heteroskedasticity robust standard errors. As the precision of the sample was already a problem, I chose not to do so. Also, it was studied the correlation between the variables of the models, but none presented a high VIF.
+
+Also on the appendix, some extra exploratory analysis were made to motivate some of the controls, such as the schooling measure, and the age cuts did on the child definition.
+
+To close up the exercise, some of the more critical changes that could've been made to this work, that might have yielded a more correct resolution, are: (i) removing the families with absent parents, and (ii) restricting the sample to more comparable families (as in question 6), even with the cost of lower sample sizes.
+
 
 \section*{Appendix - Regression Results}\label{sec:results}
 
@@ -214,11 +304,80 @@ There were a few instruments options considered:
 
 \input{Tables/quality.tex}
 
-%\input{Tables/quality_controls.tex}
-
 
 \section*{Appendix - Exploratory Analisys}\label{sec:explore}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/correlation.png}
+    \label{fig:quality_controls}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/educ.png}
+    \label{fig:quality_controls}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Figures/ages.png}
+    \label{fig:quality_controls}
+\end{figure}
+
+
+\section*{Appendix - Model Diagnostics}\label{sec:explore}
+\begin{table}[H] \centering 
+    \caption{} 
+    \label{} 
+  \begin{tabular}{@{\extracolsep{5pt}} ccccc} 
+  \\[-1.8ex]\hline 
+  \hline \\[-1.8ex] 
+   & statistic & p.value & parameter & method \\ 
+  \hline \\[-1.8ex] 
+  1 & c(BP = 25.40) & c(BP = 3.04) & c(df = 2) & studentized Breusch-Pagan test \\ 
+  \hline \\[-1.8ex] 
+  \end{tabular} 
+  \end{table} 
+  
+  \begin{table}[H] \centering 
+    \caption{} 
+    \label{} 
+  \begin{tabular}{@{\extracolsep{5pt}} ccccc} 
+  \\[-1.8ex]\hline 
+  \hline \\[-1.8ex] 
+   & statistic & p.value & parameter & method \\ 
+  \hline \\[-1.8ex] 
+  1 & c(BP = 3.43) & c(BP = 0.063) & c(df = 1) & studentized Breusch-Pagan test \\ 
+  \hline \\[-1.8ex] 
+  \end{tabular} 
+  \end{table} 
+  
+  \begin{table}[H] \centering 
+    \caption{} 
+    \label{} 
+  \begin{tabular}{@{\extracolsep{5pt}} ccccc} 
+  \\[-1.8ex]\hline 
+  \hline \\[-1.8ex] 
+   & statistic & p.value & parameter & method \\ 
+  \hline \\[-1.8ex] 
+  1 & c(BP = 66.55) & c(BP = 4.08e-06) & c(df = 23) & studentized Breusch-Pagan test \\ 
+  \hline \\[-1.8ex] 
+  \end{tabular} 
+  \end{table} 
+  
+  \begin{table}[H] \centering 
+    \caption{} 
+    \label{} 
+  \begin{tabular}{@{\extracolsep{5pt}} ccccc} 
+  \\[-1.8ex]\hline 
+  \hline \\[-1.8ex] 
+   & statistic & p.value & parameter & method \\ 
+  \hline \\[-1.8ex] 
+  1 & c(BP = 87.35) & c(BP = 1.96e-09) & c(df = 23) & studentized Breusch-Pagan test \\ 
+  \hline \\[-1.8ex] 
+  \end{tabular} 
+  \end{table} 
 
 %\section*{References}
 %\bibliography{bibliography.bib}
