@@ -2,3 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
+report.synctex.gz
+Personal/
+latex_build/
