@@ -1,4 +1,4 @@
-# Empirical Work From "Econometrics I" Class
+# Empirical Work: Effect of Family Size in Children Quality
 
 This is the repository associated with the empirical work required at the class Econometrics I, from FGV-EESP's masters in Economics course.
 
