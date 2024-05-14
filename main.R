@@ -158,17 +158,17 @@ plot_partial <- function(updt, iv) {
 # Data --------------------------------------------------------------------
 # Importing and removing fixed variables; Saving as RDS:
 if (FALSE) {
-  data_raw <- read.csv("Data/ipumsi_data.csv") %>%
+  data_raw <- read.csv("data/ipumsi_data.csv") %>%
     as_tibble()
   
   data_raw <- data_raw %>%
     select(-all_of(map_dbl(data_raw, ~length(unique(.x))) %>% {names(.)[. == 1]}))
   
-  saveRDS(data_raw, "Data/data_raw.RDS")
+  saveRDS(data_raw, "data/data_raw.RDS")
 }
 
 # Filtering out negative incomes; transforming missing codes to NA, etc.:
-data_raw <- readRDS("Data/data_raw.RDS") %>%
+data_raw <- readRDS("data/data_raw.RDS") %>%
   filter(INCTOT >= 0) %>%
   mutate(
     across(where(is.numeric) & !SERIAL,
@@ -294,7 +294,7 @@ data_raw %>%
   ggpubr::gghistogram(ggtheme = theme_bw()) +
   labs(title = "Histogram of 'Childs' Ages", y = "Count", x = "Age")
 
-ggsave("Figures/ages.png", width = 16, height = 12, units = "cm")
+ggsave("figures/ages.png", width = 16, height = 12, units = "cm")
 
 quick_agg(HasGrandchilds = any(RELATE == 4, na.rm = TRUE))
 
@@ -322,7 +322,7 @@ data_raw %>%
   facet_wrap(vars(name), scales = "free_y") +
   labs(title = "Education of Children by Age", y = "Value", x = "Age")
 
-ggsave("Figures/educ.png", width = 16, height = 12, units = "cm")
+ggsave("figures/educ.png", width = 16, height = 12, units = "cm")
 
 # Analizyng old children:
 data_raw %>%
@@ -385,15 +385,15 @@ model1$results <- imap_dfr(model1$models, function(m, name) {
 
 model1$models %>%
   .[grepl("Linear", names(.))] %>%
-  gaze(title = "Linear CEFs", output = "Tables/cefs_linear.tex")
+  gaze(title = "Linear CEFs", output = "tables/cefs_linear.tex")
 
 model1$models %>%
   .[grepl("Quadratic|Log", names(.))] %>%
-  gaze(title = "Non-linear CEFs", output = "Tables/cefs_non-linear.tex")
+  gaze(title = "Non-linear CEFs", output = "tables/cefs_non_linear.tex")
 
 model1$models %>%
   .[grepl("Quantile", names(.))] %>%
-  gaze(title = "Quantile CEFs", output = "Tables/cefs_quantile.tex")
+  gaze(title = "Quantile CEFs", output = "tables/cefs_quantile.tex")
 
 # -------------------- Graphs --------------------
 graph1 <- data_gdensity(IncTot)
@@ -414,7 +414,7 @@ ggplot(graph1$data_density, aes(value, Siblings)) +
   ) +
   theme(legend.position = "bottom")
 
-ggsave("Figures/cefs.png", width = 16, height = 12, units = "cm")
+ggsave("figures/cefs.png", width = 16, height = 12, units = "cm")
 
 
 # Task 2 ------------------------------------------------------------------
@@ -431,7 +431,7 @@ model2$formulas <- expand.grid(
 model2$models <- map(model2$formulas, ~lm(.x, data))
 
 model2$models[c(1, 2, 6, 7)] %>%
-  gaze(title = "Siblings Effect - no Controls", output = "Tables/quality.tex")
+  gaze(title = "Siblings Effect - no Controls", output = "tables/quality.tex")
 
 
 # -------------------- Graphs --------------------
@@ -462,7 +462,7 @@ graph2$graph_cont + graph2$graph_disc + guide_area() +
   plot_layout(widths = c(4,1), guides = "collect", design = graph2$layout) +
   plot_annotation(title = "Quality Measures versus Siblings")
 
-ggsave("Figures/quality.png", width = 16, height = 14, units = "cm")
+ggsave("figures/quality.png", width = 16, height = 14, units = "cm")
 
 
 # Task 3 ------------------------------------------------------------------
@@ -488,7 +488,7 @@ map(model3$models, car::vif)
 gaze(model3$models,
      keep = "Siblings",
      title = "Siblings Effect - with Controls",
-     output = "Tables/quality_controls.tex"
+     output = "tables/quality_controls.tex"
 )
 
 
@@ -512,10 +512,10 @@ ggplot(graph3$data_cor, aes(var1, var2, fill = value)) +
     fill = "Correlation"
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 0.8))
-ggsave("Figures/correlation.png", width = 16, height = 12, units = "cm")
+ggsave("figures/correlation.png", width = 16, height = 12, units = "cm")
 
 plot_partial(~ . - Siblings, FALSE)
-ggsave("Figures/quality_controls.png", width = 16, height = 12, units = "cm")
+ggsave("figures/quality_controls.png", width = 16, height = 12, units = "cm")
 
 
 # Task 4 ------------------------------------------------------------------
@@ -534,12 +534,12 @@ model4$formulas <- expand.grid(
 
 model4$models <- map(model4$formulas, ~ ivreg(.x, data = data))
 
-gaze(model4$models[1:5], output = "Tables/rooms_instrument.tex",
+gaze(model4$models[1:5], output = "tables/rooms_instrument.tex",
      keep = "Siblings",
      title = "Siblings Effect on Bedrooms - with Instrument"
 )
 
-gaze(model4$models[6:10], output = "Tables/school_instrument.tex",
+gaze(model4$models[6:10], output = "tables/school_instrument.tex",
   keep = "Siblings",
   title = "Siblings Effect on Schooling - with Instrument"
 )
